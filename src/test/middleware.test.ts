@@ -49,6 +49,12 @@ describe('middleware', () => {
       expect(response.status).not.toBe(307)
     })
 
+    it.each(['/forgot-password', '/reset-password'])('allows access to %s without redirect', async path => {
+      const req = makeRequest(path)
+      const response = await middleware(req)
+      expect(response.status).not.toBe(307)
+    })
+
     it('allows access to /api routes without redirect', async () => {
       const req = makeRequest('/api/health')
       const response = await middleware(req)
@@ -72,6 +78,12 @@ describe('middleware', () => {
       const response = await middleware(req)
       expect(response.status).toBe(307)
       expect(response.headers.get('location')).toBe('http://localhost:3000/posts')
+    })
+
+    it.each(['/forgot-password', '/reset-password'])('allows authenticated users to stay on %s', async path => {
+      const req = makeRequest(path)
+      const response = await middleware(req)
+      expect(response.status).not.toBe(307)
     })
   })
 })
