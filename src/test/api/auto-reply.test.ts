@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 
 const {
   mockFetchThreadsMetrics,
@@ -32,19 +32,24 @@ function makeRequest(secret = 'test-secret') {
 }
 
 function makeSupabaseMock(posts: object[]) {
-  const updateEq = vi.fn().mockResolvedValue({ error: null })
+  const updateResult = { data: [{ id: 'post-1' }], error: null as unknown }
+  const updateChain = { eq: vi.fn().mockReturnThis(), is: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), then: (resolve: (v: unknown) => void) => resolve(updateResult) }
+  const updateEq = vi.fn().mockReturnValue(updateChain)
   const update = vi.fn().mockReturnValue({ eq: updateEq })
   const selectChain = {
     eq: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
-    then: (resolve: (v: { data: object[] }) => void) => resolve({ data: posts }),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockImplementation(function (this: { then: ReturnType<typeof vi.fn> }) { this.then.mockImplementation((resolve) => resolve({ data: [], error: null })); return this }),
+    then: vi.fn().mockImplementation((resolve: (v: unknown) => void) => resolve({ data: posts, error: null })),
   }
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === 'posts') return { select: vi.fn().mockReturnValue(selectChain), update }
     return {}
   })
   mockCreateServiceClient.mockResolvedValue({ from })
-  return { from, update, updateEq, selectChain }
+  return { from, update, updateEq, selectChain, updateResult }
 }
 
 function threadsPost(overrides: Record<string, unknown> = {}) {
@@ -90,8 +95,12 @@ describe('GET /api/cron/auto-reply', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'info').mockImplementation(() => {})
     mockPostToThreads.mockResolvedValue({ platformPostId: 'reply-1', meta: {} })
   })
+
+  afterEach(() => { vi.restoreAllMocks() })
 
   it('CRON_SECRET が一致しない場合 401 を返す', async () => {
     const res = await GET(makeRequest('wrong'))
@@ -230,5 +239,132 @@ describe('GET /api/cron/auto-reply', () => {
 
     expect(selectChain.eq).toHaveBeenCalledWith('status', 'published')
     expect(selectChain.eq).toHaveBeenCalledWith('cta_reply_posted', false)
+  })
+})
+
+
+describe('auto-reply failure reporting', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    mockFetchThreadsMetrics.mockResolvedValue({ impressions: 800 })
+    mockPostToThreads.mockResolvedValue({ platformPostId: 'reply-1' })
+  })
+
+  it('reports database read failures instead of an empty success', async () => {
+    const { selectChain } = makeSupabaseMock([])
+    selectChain.then.mockImplementation((resolve) => resolve({ data: null, error: { code: '08006', message: 'unavailable' } }))
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ failed: 1, errors: [{ stage: 'load_posts' }] })
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('reports metrics failure but continues other posts without leaking credentials', async () => {
+    makeSupabaseMock([threadsPost(), threadsPost({ id: 'post-2' })])
+    mockFetchThreadsMetrics.mockRejectedValueOnce(new Error('token=secret-do-not-log'))
+    const res = await GET(makeRequest())
+    const body = await res.json()
+    expect(res.status).toBe(500)
+    expect(body).toMatchObject({ replied: 1, checked: 2, failed: 1, errors: [{ postId: 'post-1', stage: 'metrics' }] })
+    expect(JSON.stringify(body)).not.toContain('secret-do-not-log')
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('secret-do-not-log')
+  })
+
+  it('does not send if claiming fails', async () => {
+    const { updateResult } = makeSupabaseMock([threadsPost()])
+    updateResult.error = { code: '08006' }
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ errors: [{ stage: 'claim' }] })
+    expect(mockPostToThreads).not.toHaveBeenCalled()
+  })
+
+  it('detects a persistence update that affected zero rows', async () => {
+    const { updateResult } = makeSupabaseMock([threadsPost()])
+    mockPostToThreads.mockImplementationOnce(async () => {
+      updateResult.data = []
+      return { platformPostId: 'reply-1' }
+    })
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ replied: 1, errors: [{ stage: 'persist', replyId: 'reply-1' }] })
+  })
+
+  it('reports a later page failure while retaining earlier successes', async () => {
+    const { selectChain } = makeSupabaseMock([])
+    selectChain.gt.mockReturnThis()
+    const pages = [
+      { data: [threadsPost()], error: null },
+      { data: null, error: { code: '08006' } },
+    ]
+    selectChain.then.mockImplementation((resolve) => resolve(pages.shift()))
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ replied: 1, errors: [{ stage: 'load_posts' }] })
+  })
+
+  it('reports stale claims even when their eligibility window has expired', async () => {
+    makeSupabaseMock([threadsPost({ published_at: '2020-01-01T00:00:00Z', cta_reply_claimed_at: '2020-01-01T00:01:00Z' })])
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ errors: [{ stage: 'reconcile' }] })
+    expect(mockPostToThreads).not.toHaveBeenCalled()
+  })
+
+  it('does not flag an in-flight recent claim as failed', async () => {
+    makeSupabaseMock([threadsPost({ cta_reply_claimed_at: new Date().toISOString() })])
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(200)
+    expect(mockPostToThreads).not.toHaveBeenCalled()
+  })
+
+  it('reports send failure and retains claim for reconciliation', async () => {
+    const { update } = makeSupabaseMock([threadsPost()])
+    mockPostToThreads.mockRejectedValueOnce(new Error('network timeout'))
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ failed: 1, errors: [{ stage: 'publish' }] })
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ cta_reply_claimed_at: null }))
+  })
+
+  it('reports persistence failure with the published reply ID', async () => {
+    const { update, updateResult } = makeSupabaseMock([threadsPost()])
+    mockPostToThreads.mockImplementationOnce(async () => {
+      updateResult.error = { code: '08006' }
+      return { platformPostId: 'reply-1' }
+    })
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ replied: 1, failed: 1, errors: [{ stage: 'persist', replyId: 'reply-1' }] })
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ cta_reply_claimed_at: null }))
+  })
+
+  it('does not send when another invocation wins the atomic claim', async () => {
+    const { updateResult } = makeSupabaseMock([threadsPost()])
+    updateResult.data = []
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(200)
+    expect(mockPostToThreads).not.toHaveBeenCalled()
+  })
+
+  it('reports an unresolved previous attempt without sending again', async () => {
+    makeSupabaseMock([threadsPost({ cta_reply_claimed_at: new Date(Date.now() - 3600000).toISOString() })])
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ errors: [{ stage: 'reconcile' }] })
+    expect(mockPostToThreads).not.toHaveBeenCalled()
+  })
+
+  it('loads subsequent pages even if the server caps a page below the requested size', async () => {
+    const { selectChain } = makeSupabaseMock([])
+    selectChain.gt.mockReturnThis()
+    const pages = [[threadsPost({ id: 'post-1', published_at: '2020-01-01T00:00:00Z' })], [threadsPost({ id: 'post-2' })], []]
+    selectChain.then.mockImplementation((resolve) => resolve({ data: pages.shift() ?? [], error: null }))
+    const res = await GET(makeRequest())
+    expect(await res.json()).toMatchObject({ replied: 1, checked: 1 })
+    expect(selectChain.gt).toHaveBeenCalledWith('id', 'post-1')
   })
 })
