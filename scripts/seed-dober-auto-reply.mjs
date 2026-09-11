@@ -8,7 +8,10 @@ const require = createRequire(resolve(__dirname, '..') + '/')
 const { createClient } = require('@supabase/supabase-js')
 
 const cfg = JSON.parse(readFileSync(resolve(__dirname, '../.mcp.json'), 'utf8'))
-const env = cfg.mcpServers['sns-automation'].env
+const env = cfg.mcpServers?.['nexauto']?.env ?? cfg.mcpServers?.['sns-automation']?.env
+if (!env) {
+  throw new Error('MCP server configuration not found in .mcp.json (checked nexauto, sns-automation)')
+}
 const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
 const AUTO_REPLY_CONFIG = {

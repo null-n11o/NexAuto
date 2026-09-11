@@ -551,7 +551,7 @@ git commit -m "feat: add /api/cron/auto-reply momentum-gated LINE CTA reply"
 - Create: `scripts/seed-dober-auto-reply.mjs`
 
 **Interfaces:**
-- Consumes: `accounts.auto_reply_config`（Task 1）。Supabase 認証は `.mcp.json`（`mcpServers['sns-automation'].env`）から読む。**キーの値は出力しない。**
+- Consumes: `accounts.auto_reply_config`（Task 1）。Supabase 認証は `.mcp.json`（`mcpServers['nexauto'].env`）から読む。**キーの値は出力しない。**
 - Produces: Dober/Threads アカウントの `auto_reply_config` に確定設定を書き込む。
 
 - [ ] **Step 1: Write the seed script**
@@ -569,7 +569,7 @@ const require = createRequire(resolve(__dirname, '..') + '/')
 const { createClient } = require('@supabase/supabase-js')
 
 const cfg = JSON.parse(readFileSync(resolve(__dirname, '../.mcp.json'), 'utf8'))
-const env = cfg.mcpServers['sns-automation'].env
+const env = cfg.mcpServers?.['nexauto']?.env ?? cfg.mcpServers?.['sns-automation']?.env
 const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
 const AUTO_REPLY_CONFIG = {
@@ -603,7 +603,7 @@ Expected: `updated: [ { id: 'df3bd84a-…', account_name: 'Dober/Threads', auto_
 
 Run:
 ```bash
-node -e "const{readFileSync}=require('fs');const c=JSON.parse(readFileSync('.mcp.json','utf8')).mcpServers['sns-automation'].env;const{createClient}=require('@supabase/supabase-js');const s=createClient(c.SUPABASE_URL,c.SUPABASE_SERVICE_ROLE_KEY);s.from('accounts').select('account_name,auto_reply_config').then(({data})=>console.log(JSON.stringify(data,null,2)))"
+node -e "const{readFileSync}=require('fs');const c=JSON.parse(readFileSync('.mcp.json','utf8'));const env=c.mcpServers['nexauto']?.env||c.mcpServers['sns-automation']?.env;const{createClient}=require('@supabase/supabase-js');const s=createClient(env.SUPABASE_URL,env.SUPABASE_SERVICE_ROLE_KEY);s.from('accounts').select('account_name,auto_reply_config').then(({data})=>console.log(JSON.stringify(data,null,2)))"
 ```
 Expected: Dober/Threads のみ config あり、他アカウント（Kentaro Nakano）は `null`。
 
@@ -643,7 +643,7 @@ Expected: `200`。ボディは `{"replied":0,"checked":...}`。
 
 Dober の次の投稿が publish されてから60分以内に、インプレが500を超えたタイミングで、その投稿にLINE誘導リプがぶら下がることを Threads 上で目視確認する。あわせて Supabase で当該 `posts.cta_reply_posted = true` / `cta_reply_post_id` が入っていることを確認:
 ```bash
-node -e "const{readFileSync}=require('fs');const c=JSON.parse(readFileSync('.mcp.json','utf8')).mcpServers['sns-automation'].env;const{createClient}=require('@supabase/supabase-js');const s=createClient(c.SUPABASE_URL,c.SUPABASE_SERVICE_ROLE_KEY);s.from('posts').select('id,cta_reply_posted,cta_reply_post_id,published_at').eq('cta_reply_posted',true).order('published_at',{ascending:false}).limit(5).then(({data})=>console.log(JSON.stringify(data,null,2)))"
+node -e "const{readFileSync}=require('fs');const c=JSON.parse(readFileSync('.mcp.json','utf8'));const env=c.mcpServers['nexauto']?.env||c.mcpServers['sns-automation']?.env;const{createClient}=require('@supabase/supabase-js');const s=createClient(env.SUPABASE_URL,env.SUPABASE_SERVICE_ROLE_KEY);s.from('posts').select('id,cta_reply_posted,cta_reply_post_id,published_at').eq('cta_reply_posted',true).order('published_at',{ascending:false}).limit(5).then(({data})=>console.log(JSON.stringify(data,null,2)))"
 ```
 Expected: 直近の発火投稿が並ぶ。
 
