@@ -50,3 +50,12 @@ test-results/
 # Claude Code local settings (contains sensitive keys)
 .claude/settings.local.json
 .mcp.json
+
+# X analytics CSV dumps (markdown reports are tracked)
+/data/raw/**/*.csv
+
+# Codex
+.codex/
+
+# Supabase
+supabase/.temp/

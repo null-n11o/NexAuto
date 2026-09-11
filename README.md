@@ -19,7 +19,7 @@ npm run test:e2e
 To enable the local NexAuto MCP server in Codex:
 
 ```bash
-codex mcp add nexauto -- node /Users/nakanokentaro/02_dev/sns-automation/scripts/codex-mcp-nexauto.mjs
+codex mcp add nexauto -- node ./scripts/codex-mcp-nexauto.mjs
 ```
 
 The MCP launcher reads `.env.local` and maps `NEXT_PUBLIC_SUPABASE_URL` to `SUPABASE_URL` when needed. Do not commit secrets from `.env.local` or `.mcp.json`.
