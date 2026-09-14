@@ -16,7 +16,7 @@ vi.mock('@/lib/threads-api', () => ({ postToThreads: mockPostToThreads }))
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: mockCreateServiceClient }))
 vi.mock('@/lib/crypto', () => ({ decrypt: (s: string) => s }))
 
-import { GET } from '@/app/api/cron/auto-reply/route'
+import { GET, pendingScanFilter } from '@/app/api/cron/auto-reply/route'
 
 const CONFIG = {
   enabled: true,
@@ -31,7 +31,10 @@ function makeRequest(secret = 'test-secret') {
   })
 }
 
-function makeSupabaseMock(posts: object[]) {
+function makeSupabaseMock(
+  posts: object[],
+  accounts: { data: object[] | null, error: unknown } = { data: [{ auto_reply_config: CONFIG }], error: null },
+) {
   const updateResult = { data: [{ id: 'post-1' }], error: null as unknown }
   const updateChain = { eq: vi.fn().mockReturnThis(), is: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), then: (resolve: (v: unknown) => void) => resolve(updateResult) }
   const updateEq = vi.fn().mockReturnValue(updateChain)
@@ -39,13 +42,18 @@ function makeSupabaseMock(posts: object[]) {
   const selectChain = {
     eq: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
+    or: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     gt: vi.fn().mockImplementation(function (this: { then: ReturnType<typeof vi.fn> }) { this.then.mockImplementation((resolve) => resolve({ data: [], error: null })); return this }),
     then: vi.fn().mockImplementation((resolve: (v: unknown) => void) => resolve({ data: posts, error: null })),
   }
+  const accountSelect = {
+    then: vi.fn().mockImplementation((resolve: (v: unknown) => void) => resolve(accounts)),
+  }
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === 'posts') return { select: vi.fn().mockReturnValue(selectChain), update }
+    if (table === 'accounts') return { select: vi.fn().mockReturnValue(accountSelect) }
     return {}
   })
   mockCreateServiceClient.mockResolvedValue({ from })
@@ -240,6 +248,43 @@ describe('GET /api/cron/auto-reply', () => {
     expect(selectChain.eq).toHaveBeenCalledWith('status', 'published')
     expect(selectChain.eq).toHaveBeenCalledWith('cta_reply_posted', false)
   })
+
+  it('発火ウィンドウ内と未解決claimだけを走査する', async () => {
+    mockFetchThreadsMetrics.mockResolvedValue({ impressions: 800, likes: 0, replies: 0, reposts: 0 })
+    const { selectChain } = makeSupabaseMock([threadsPost()])
+
+    await GET(makeRequest())
+
+    expect(selectChain.or).toHaveBeenCalledWith(
+      expect.stringMatching(/^published_at\.gte\."[^"]+",cta_reply_claimed_at\.not\.is\.null$/),
+    )
+  })
+
+  it('アカウント設定の最大ウィンドウで走査範囲を決める', async () => {
+    mockFetchThreadsMetrics.mockResolvedValue({ impressions: 250, likes: 0, replies: 0, reposts: 0 })
+    const { selectChain } = makeSupabaseMock(
+      [tieredPost(20)],
+      { data: [{ auto_reply_config: TIERED_CONFIG }], error: null },
+    )
+
+    await GET(makeRequest())
+
+    const filter = vi.mocked(selectChain.or).mock.calls[0]?.[0] as string
+    const cutoff = filter.match(/published_at\.gte\."([^"]+)"/)?.[1]
+    expect(cutoff).toBeTruthy()
+    const ageMin = (Date.now() - new Date(cutoff as string).getTime()) / 60000
+    expect(ageMin).toBeGreaterThan(599)
+    expect(ageMin).toBeLessThan(601)
+  })
+})
+
+describe('pendingScanFilter', () => {
+  it('quotes the timestamp so PostgREST does not split on colons', () => {
+    const filter = pendingScanFilter(720, Date.parse('2026-09-14T10:20:00Z'))
+    expect(filter).toBe(
+      'published_at.gte."2026-09-13T22:20:00.000Z",cta_reply_claimed_at.not.is.null',
+    )
+  })
 })
 
 
@@ -366,5 +411,19 @@ describe('auto-reply failure reporting', () => {
     const res = await GET(makeRequest())
     expect(await res.json()).toMatchObject({ replied: 1, checked: 1 })
     expect(selectChain.gt).toHaveBeenCalledWith('id', 'post-1')
+  })
+
+  it('uses a fallback window and stays HTTP 200 if account config cannot be loaded', async () => {
+    mockFetchThreadsMetrics.mockResolvedValue({ impressions: 800, likes: 0, replies: 0, reposts: 0 })
+    const { selectChain } = makeSupabaseMock([threadsPost()], { data: null, error: { code: '08006' } })
+    const res = await GET(makeRequest())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ errors: [{ stage: 'config' }] })
+    const filter = vi.mocked(selectChain.or).mock.calls[0]?.[0] as string
+    const cutoff = filter.match(/published_at\.gte\."([^"]+)"/)?.[1]
+    expect(cutoff).toBeTruthy()
+    const ageMs = Date.now() - new Date(cutoff as string).getTime()
+    expect(ageMs).toBeGreaterThan(23 * 60 * 60 * 1000)
+    expect(ageMs).toBeLessThan(25 * 60 * 60 * 1000)
   })
 })

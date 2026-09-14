@@ -4,6 +4,17 @@ import { fetchThreadsPostMetrics } from '@/lib/threads-metrics'
 import { postToThreads } from '@/lib/threads-api'
 import { decrypt } from '@/lib/crypto'
 
+// Hobby functions cap at 10s. Scanning every unreplied post from iad1 to Tokyo
+// already took ~6s when warm; a cold start surfaces as a platform 500.
+export const maxDuration = 60
+
+const FALLBACK_WINDOW_MINUTES = 24 * 60
+
+export function pendingScanFilter(maxWindowMinutes: number, nowMs = Date.now()): string {
+  const cutoff = new Date(nowMs - maxWindowMinutes * 60_000).toISOString()
+  return `published_at.gte."${cutoff}",cta_reply_claimed_at.not.is.null`
+}
+
 interface AutoReplyTier {
   window_minutes: number
   threshold: number
@@ -66,6 +77,21 @@ export async function GET(request: Request) {
 
   try {
     const supabase = await createServiceClient()
+    let maxWindowMinutes = FALLBACK_WINDOW_MINUTES
+    const { data: accountRows, error: accountError } = await supabase
+      .from('accounts')
+      .select('auto_reply_config')
+    if (accountError) {
+      report({ stage: 'config' })
+    } else {
+      const windows = (accountRows ?? [])
+        .flatMap(row => resolveTiers((row.auto_reply_config ?? {}) as AutoReplyConfig))
+        .map(tier => tier.window_minutes)
+        .filter((minutes): minutes is number => Number.isFinite(minutes) && minutes > 0)
+      if (windows.length) maxWindowMinutes = Math.max(...windows)
+    }
+    const scanFilter = pendingScanFilter(maxWindowMinutes)
+
     let cursor: string | undefined
     // Keyset pagination stays stable as successful posts leave the pending set.
     // Continue until an empty page, even when the database caps results below our limit.
@@ -76,6 +102,7 @@ export async function GET(request: Request) {
         .eq('cta_reply_posted', false)
         .not('platform_post_id', 'is', null)
         .not('published_at', 'is', null)
+        .or(scanFilter)
         .order('id', { ascending: true })
         .limit(200)
       if (cursor) query = query.gt('id', cursor)
