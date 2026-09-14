@@ -58,7 +58,10 @@ export async function GET(request: Request) {
   const finish = () => {
     const summary = { replied, checked, failed: errors.length, errors }
     console.info('[auto-reply] completed', summary)
-    return NextResponse.json(summary, { status: errors.length ? 500 : 200 })
+    // Only a broken sweep should fail the HTTP job. Per-post errors stay in the
+    // body so cron-job.org keeps calling the endpoint instead of disabling it.
+    const fatal = errors.some(error => error.stage === 'load_posts')
+    return NextResponse.json(summary, { status: fatal ? 500 : 200 })
   }
 
   try {
