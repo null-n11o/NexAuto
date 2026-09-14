@@ -255,7 +255,7 @@ describe('auto-reply failure reporting', () => {
 
   it('reports database read failures instead of an empty success', async () => {
     const { selectChain } = makeSupabaseMock([])
-    selectChain.then.mockImplementation((resolve) => resolve({ data: null, error: { code: '08006', message: 'unavailable' } }))
+    selectChain.then.mockImplementation((resolve) => resolve({ data: null, error: { code: '42703', message: 'column posts.cta_reply_claimed_at does not exist' } }))
     const res = await GET(makeRequest())
     expect(res.status).toBe(500)
     expect(await res.json()).toMatchObject({ failed: 1, errors: [{ stage: 'load_posts' }] })
@@ -267,7 +267,7 @@ describe('auto-reply failure reporting', () => {
     mockFetchThreadsMetrics.mockRejectedValueOnce(new Error('token=secret-do-not-log'))
     const res = await GET(makeRequest())
     const body = await res.json()
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(body).toMatchObject({ replied: 1, checked: 2, failed: 1, errors: [{ postId: 'post-1', stage: 'metrics' }] })
     expect(JSON.stringify(body)).not.toContain('secret-do-not-log')
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('secret-do-not-log')
@@ -277,7 +277,7 @@ describe('auto-reply failure reporting', () => {
     const { updateResult } = makeSupabaseMock([threadsPost()])
     updateResult.error = { code: '08006' }
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ errors: [{ stage: 'claim' }] })
     expect(mockPostToThreads).not.toHaveBeenCalled()
   })
@@ -289,7 +289,7 @@ describe('auto-reply failure reporting', () => {
       return { platformPostId: 'reply-1' }
     })
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ replied: 1, errors: [{ stage: 'persist', replyId: 'reply-1' }] })
   })
 
@@ -309,7 +309,7 @@ describe('auto-reply failure reporting', () => {
   it('reports stale claims even when their eligibility window has expired', async () => {
     makeSupabaseMock([threadsPost({ published_at: '2020-01-01T00:00:00Z', cta_reply_claimed_at: '2020-01-01T00:01:00Z' })])
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ errors: [{ stage: 'reconcile' }] })
     expect(mockPostToThreads).not.toHaveBeenCalled()
   })
@@ -325,7 +325,7 @@ describe('auto-reply failure reporting', () => {
     const { update } = makeSupabaseMock([threadsPost()])
     mockPostToThreads.mockRejectedValueOnce(new Error('network timeout'))
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ failed: 1, errors: [{ stage: 'publish' }] })
     expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ cta_reply_claimed_at: null }))
   })
@@ -337,7 +337,7 @@ describe('auto-reply failure reporting', () => {
       return { platformPostId: 'reply-1' }
     })
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ replied: 1, failed: 1, errors: [{ stage: 'persist', replyId: 'reply-1' }] })
     expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ cta_reply_claimed_at: null }))
   })
@@ -353,7 +353,7 @@ describe('auto-reply failure reporting', () => {
   it('reports an unresolved previous attempt without sending again', async () => {
     makeSupabaseMock([threadsPost({ cta_reply_claimed_at: new Date(Date.now() - 3600000).toISOString() })])
     const res = await GET(makeRequest())
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ errors: [{ stage: 'reconcile' }] })
     expect(mockPostToThreads).not.toHaveBeenCalled()
   })

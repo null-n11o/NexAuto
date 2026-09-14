@@ -12,8 +12,11 @@
 ## 応答とログ
 
 `replied` はThreadsから投稿成功の応答を受けた件数、`checked` は時間内の判定対象数。
-`failed` と `errors` を追加し、1件でも失敗があればHTTP 500を返す。他の投稿は処理を続ける。
-成功時はHTTP 200。`[auto-reply] completed` に実行集計、`[auto-reply] failure` に失敗を出力する。
+`failed` と `errors` を追加し、投稿単位の失敗があっても処理は続ける。
+投稿の読み込み自体が失敗したときだけ HTTP 500 を返す。メトリクス取得失敗や未解決の claim など
+投稿単位の失敗は HTTP 200 と `errors` で返す。cron-job.org は非 2xx が続くとジョブを停止するため、
+ジョブ実行自体ができた場合は 200 を返す。
+`[auto-reply] completed` に実行集計、`[auto-reply] failure` に失敗を出力する。
 
 `errors` は `postId`、`stage`、取得済みなら `replyId` を含む。
 秘密値を含み得るAPIレスポンス・例外本文・トークン・返信文面は出力しない。
