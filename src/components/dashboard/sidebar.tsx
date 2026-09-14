@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UserRole } from '@/types'
 
+import { NexAutoLogo } from '@/components/brand/logo'
+
 interface SidebarProps {
   role: UserRole
 }
@@ -35,10 +37,10 @@ export function Sidebar({ role }: SidebarProps) {
 
   return (
     <aside className="w-56 bg-gray-900 text-white flex flex-col min-h-screen">
-      <div className="px-4 py-5 border-b border-gray-700">
-        <span className="text-sm font-semibold tracking-wide uppercase text-gray-400">
-          NexAuto
-        </span>
+      <div className="px-4 py-5 border-b border-gray-700 flex items-center">
+        <Link href="/posts" className="block focus:outline-none">
+          <NexAutoLogo variant="dark" width={128} priority />
+        </Link>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-1">
         {items.map(({ href, label }) => {

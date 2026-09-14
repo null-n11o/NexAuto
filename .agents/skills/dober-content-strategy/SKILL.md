@@ -77,8 +77,6 @@ JST → UTC変換（`scheduled_date`に使用）:
 - 12:00 JST = 同日 03:00 UTC
 - 20:00 JST = 同日 11:00 UTC
 
-**重要（枠時刻のズレ防止）**: `create_post` / `update_post` の `scheduled_date` はスキーマ上 `YYYY-MM-DD` と表示されるが、日付だけを渡すと **00:00 UTC 固定**で登録され、7:30 / 12:00 / 20:00 の枠にならない。**必ず上記UTC換算した ISO 8601 日時文字列で渡す**こと（例: `2026-08-05T22:30:00+00:00` = 8/5 7:30 JST）。システム側での枠の自動配分は行われない。
-
 ### Step 2: 投稿内容を作成する
 
 まず、`list_accounts` でDoberのThreadsアカウントを特定し、現在アクティブな参照実例セットをDBから読み込む。`mcp__supabase__execute_sql`（project_id: `fdmhkjiqsrzktfmbqlxg`）で実行:
@@ -99,18 +97,9 @@ WHERE account_id = '<list_accountsで取得したDoberのaccount_id>' AND is_act
 - 直近で使用したフォーマット・テーマと重複しないよう、`mcp__nexauto__list_posts`で直近の投稿を確認してから作成する。
 - 各投稿は上記「文体ルール」に従う。
 
-#### 固有名詞フックのファクトチェック（必須）
-
-実在の人物・企業・書籍・団体などの固有名詞を使い、その発言の引用・数値（年収、記録、年齢、統計）・具体的なエピソードを含める場合は、**投稿を確定する前に必ず `WebSearch` でファクトチェックする**。
-
-- 裏取りできた内容だけを断定形で書く。確認できない発言・数値・逸話は使わない。
-- 事実と異なる、または一次ソースが見つからない場合は、その固有名詞を外して一般化した表現に差し替える（例: 特定の人物名 → 「一流の男」「トップであり続ける人間」）。
-- 誇張された俗説・出典不明の「名言」は採用しない。ブランドの信頼を損なうため、曖昧なまま断定しない。
-- チェックした固有名詞と、その根拠（何を確認したか）を Step 4 の一覧提示時にユーザーへ併記する。
-
 ### Step 3: draftとして登録する
 
-`mcp__nexauto__create_post`で、`list_accounts`で取得したDoberの`account_id`、`status: 'draft'`, `source: 'ai'`として各投稿を登録する。`scheduled_date` は Step 1 の表に従い、**枠時刻をUTC換算した ISO 8601 日時文字列**（例: `2026-08-05T03:00:00+00:00`）で渡す。日付のみを渡すと 00:00 UTC で登録され枠がズレるので不可。登録後、返り値の `scheduled_date` が意図した時刻になっているか確認する。
+`mcp__nexauto__create_post`で、`list_accounts`で取得したDoberの`account_id`、`status: 'draft'`, `source: 'ai'`として各投稿を登録する。
 
 ### Step 4: ユーザーに一覧を提示する
 

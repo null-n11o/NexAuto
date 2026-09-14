@@ -1,0 +1,15 @@
+[mcp_servers.nexauto]
+command = "node"
+args = ["/Users/nakanokentaro/02_dev/sns-automation/packages/mcp-server/dist/index.js"]
+
+[mcp_servers.nexauto.env]
+SUPABASE_URL = "https://fdmhkjiqsrzktfmbqlxg.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkbWhramlxc3J6a3RmbWJxbHhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjA4ODk3NCwiZXhwIjoyMDkxNjY0OTc0fQ.prAwQQ48WRMka9ufU_rX-5l7FpRAWJf8V__b-ZJhR-I"
+
+[mcp_servers.sns-automation]
+command = "node"
+args = ["/Users/nakanokentaro/02_dev/sns-automation/packages/mcp-server/dist/index.js"]
+
+[mcp_servers.sns-automation.env]
+SUPABASE_URL = "https://fdmhkjiqsrzktfmbqlxg.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkbWhramlxc3J6a3RmbWJxbHhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjA4ODk3NCwiZXhwIjoyMDkxNjY0OTc0fQ.prAwQQ48WRMka9ufU_rX-5l7FpRAWJf8V__b-ZJhR-I"

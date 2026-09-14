@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NexAutoLogo } from '@/components/brand/logo'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -43,6 +44,9 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="w-full max-w-md bg-white rounded-lg shadow p-8">
+      <div className="flex justify-center mb-6">
+        <NexAutoLogo width={160} priority />
+      </div>
       <h1 className="text-2xl font-bold mb-2">Choose a new password</h1>
       <p className="text-sm text-gray-600 mb-6">Enter a new password for your account.</p>
       <form onSubmit={handleSubmit} className="space-y-4">

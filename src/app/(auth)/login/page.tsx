@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NexAutoLogo } from '@/components/brand/logo'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -32,7 +33,9 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-md bg-white rounded-lg shadow p-8">
-      <h1 className="text-2xl font-bold mb-6">NexAuto</h1>
+      <div className="flex justify-center mb-8">
+        <NexAutoLogo width={180} priority />
+      </div>
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
           <Label htmlFor="email">Email</Label>

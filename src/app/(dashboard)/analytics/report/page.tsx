@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import type { Post, PostMetrics } from '@/types'
 import { withLatestMetrics } from '@/lib/analytics/latest-metrics'
 import { PrintButton } from './PrintButton'
+import { NexAutoLogo } from '@/components/brand/logo'
 
 export default async function ReportPage({
   searchParams,
@@ -66,8 +67,11 @@ export default async function ReportPage({
 
       <div className="max-w-4xl mx-auto p-8">
         {/* ヘッダー */}
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex justify-between items-start mb-8 pb-4 border-b">
           <div>
+            <div className="mb-3">
+              <NexAutoLogo width={120} />
+            </div>
             <h1 className="text-2xl font-bold">
               SNS パフォーマンスレポート{accountName ? ` — ${accountName}` : ''}
             </h1>
